@@ -67,3 +67,94 @@ After the model finishes downloading, access the agent's interface through your 
 
 ---
 **RAG Note:** You can drag and drop documentation, error logs, or entire codebases directly into the chat. The orchestrator will handle the chunking, vectorization via the embedding model, and storage in Qdrant seamlessly.
+
+### 4. Config Extenal Frameworks
+Configuration about the LLM usage with a couple of distincts Frameworks.
+
+#### 4.1 🔌 VSCode Integration (Continue.dev)
+------------------------------------
+
+To integrate the local AI agent directly into your editor, we use **Continue**, an open-source extension that serves as a high-performance alternative to GitHub Copilot.
+
+##### a\. Installation and Model Setup
+
+1.  Install the **Continue** extension from the VSCode Marketplace.
+
+2.  Before configuring, ensure the required helper models are downloaded in your local Ollama container:
+
+    Bash
+
+    ```
+    docker exec -it agent_ollama ollama run qwen2.5-coder:1.5b-base  # For fast autocomplete
+    docker exec -it agent_ollama ollama run nomic-embed-text:latest  # For codebase vectorization
+
+    ```
+
+##### b\. Configuration (`config.yaml`)
+
+1.  Open the Continue sidebar in VSCode.
+
+2.  Click the **gear icon** (bottom right of the sidebar) to open your `config.yaml` file (located at `~/.continue/config.yaml`).
+
+3.  Replace the contents with the following optimized configuration. This delegates heavy tasks (chat/refactoring) to the 7B model while reserving the lightning-fast 1.5B model strictly for typing autocomplete:
+
+YAML
+
+```
+name: Main Config
+version: 1.0.0
+schema: v1
+
+# Autocomplete tuning for local hardware performance
+tabAutocompleteOptions:
+  useCopyBuffer: true
+  useSuffix: true
+  maxPromptTokens: 1024
+  debounceDelay: 400 # Prevents CPU spiking by waiting 400ms after you stop typing
+  multilineCompletions: always
+
+# Enables RAG and deep file reading
+contextProviders:
+  - name: codebase
+    params:
+      nRetrieve: 20
+      nFinal: 5
+  - name: folder
+  - name: file
+
+models:
+  - name: Qwen 2.5 Coder 7B
+    provider: ollama
+    model: qwen2.5-coder:7b
+    apiBase: http://localhost:11434
+    roles:
+      - chat
+      - edit
+      - apply
+  - name: Qwen2.5-Coder 1.5B
+    provider: ollama
+    model: qwen2.5-coder:1.5b-base
+    apiBase: http://localhost:11434
+    roles:
+      - autocomplete
+  - name: Nomic Embed
+    provider: ollama
+    model: nomic-embed-text:latest
+    roles:
+      - embed
+
+```
+
+##### c\. Usage & Shortcuts
+
+-   **Autocomplete:** Just start typing. The 1.5B model will suggest ghost text based on the 400ms debounce delay. Press `Tab` to accept.
+
+-   **Chat (`Ctrl+L` / `Cmd+L`):** Select any code snippet and press this shortcut to send it to the Continue sidebar for explanation or refactoring.
+
+-   **Inline Edit (`Ctrl+I` / `Cmd+I`):** Select code and press this shortcut to open a floating prompt. The agent will rewrite the code directly in your file with a diff view.
+
+-   **Context Injection:** In the chat input, type `@` to attach context:
+
+    -   `@Files`: Selects a specific file.
+
+    -   `@Codebase`: Scans and vectorizes your entire open project to answer architectural questions based on the Nomic Embed model.
