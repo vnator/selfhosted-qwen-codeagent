@@ -3,6 +3,8 @@
 
 ## adapters
 - [x] VSCode Integration
+- [ ] cursor
+- [ ] claude code
 - [ ] Vim Integration
 - [ ] Github Integration
 - [ ] Gitlab Integration
