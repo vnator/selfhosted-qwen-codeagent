@@ -158,3 +158,48 @@ models:
     -   `@Files`: Selects a specific file.
 
     -   `@Codebase`: Scans and vectorizes your entire open project to answer architectural questions based on the Nomic Embed model.
+
+
+#### 4.2 🖱️ Cursor IDE Integration (Native Agent)
+
+Cursor IDE possesses native agentic features (Chat, Composer, and Inline Edit) that can be seamlessly routed to your containerized Ollama infrastructure by leveraging Ollama's OpenAI-compatible API layer.
+
+##### a. Override the OpenAI API Endpoint
+
+Since the `agent_ollama` container exposes port `11434` to the host machine, you can redirect all AI requests from Cursor to your local inference engine.
+
+1.  Open Cursor and navigate to **Settings > Models** (`Ctrl + Shift + J` or `Cmd + Shift + J`).
+
+2.  Scroll down to the **OpenAI API Key** section.
+
+3.  Enable the **Override OpenAI Base URL** toggle.
+
+4.  Set the **Base URL** to exactly: `http://localhost:11434/v1` *(The `/v1` path is mandatory for the compatibility layer to work).*
+
+5.  Insert any dummy text into the **API Key** field (e.g., `sk-local-ollama`), as the local container does not require authentication.
+
+6.  Click **Verify**.
+
+##### b. Register the Local Model
+
+Cursor needs to match the exact model tag stored in your Docker registry to route prompts correctly.
+
+1.  At the top of the **Settings > Models** page, locate the list of active models.
+
+2.  Click **Add model**.
+
+3.  Type the exact model identifier you downloaded earlier: `qwen2.5-coder:7b` (or `14b` if applicable).
+
+4.  Press `Enter` to register it.
+
+5.  **Crucial Step:** Disable the toggles for all default cloud models (such as `gpt-4o`, `claude-3.5-sonnet`, `cursor-small`). Ensure **only** your local `qwen2.5-coder:7b` is toggled on. This forces all agentic shortcuts (`Ctrl+L`, `Ctrl+I`) to utilize your local hardware.
+
+##### c. Privacy and Codebase Context (RAG)
+
+Cursor handles codebase vectorization internally rather than relying on the Qdrant container. To ensure maximum privacy and prevent code chunks from being sent to external servers for embedding:
+
+1.  Navigate to **Settings > Features > Codebase Indexing**.
+
+2.  Enable **Privacy Mode**.
+
+3.  *Note:* When fully offline, Cursor will fall back to local lexical search (keyword matching) instead of cloud-based semantic vector search. You can still use the `@Files` command in the Cursor Chat to manually inject specific files directly into the 7B model's context window.
