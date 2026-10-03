@@ -13,7 +13,10 @@
 - [x] File integrity regression coverage (LF, CRLF, UTF-8 BOM, trailing newlines)
 - [ ] Retire Python implementation artifacts after validating their Node replacements
 - [ ] Controlled discovery/planning and bounded validation loop
-- [ ] Local API/CLI contract for editors and other local clients
+- [x] Initial loopback-only authenticated Node API: ASK, REVIEW, EDIT proposal and preview (live health + ASK verified)
+- [ ] Live HTTP smoke test: proposal and diff preview on a disposable file; APPLY remains interactive CLI only
+- [ ] Cross-editor integration and workspace lifecycle (server currently binds one workspace/repository per process)
+- [ ] Grounded citations: claims must be supported by returned source ranges (known live ASK limitation)
 
 ## Earlier integration backlog
 
