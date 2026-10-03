@@ -1,0 +1,13 @@
+{
+  "name": "selfhosted-qwen-agent-core",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check cli.mjs && node --test"
+  }
+}
