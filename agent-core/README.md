@@ -105,3 +105,31 @@ inference compatibility issue is resolved.
   collection metadata. Keep retrieved content untrusted.
 - The model can produce an inaccurate edit: inspect the diff and run relevant
   project tests manually after applying.
+
+## Phase 04 — read-only retrieved context (Node.js)
+
+The Node.js ingestion creates `code_chunks_node_v1`. The Context Engine retrieves only
+chunks matching the explicit repository ID and embedding model and revalidates each
+chunk against the *current* file inside `--workspace` (using the existing workspace
+read policy). Missing, stale, private and tampered hits are discarded. A single file
+greater than the Agent Core's existing 64 KiB read limit is also excluded; split or
+scope those workspaces until larger-file reads receive their own review.
+
+Inspect retrieval separately:
+
+```sh
+node --env-file=.env agent-core/context.mjs --workspace . \
+  --repository selfhosted-qwen-codeagent \
+  --query 'Where is the EDIT approval mechanism implemented?' --limit 6
+```
+
+Ask with automatic, read-only context:
+
+```sh
+node --env-file=.env agent-core/cli.mjs ask --workspace . \
+  --context auto --repository selfhosted-qwen-codeagent \
+  --question 'Where is the EDIT approval mechanism implemented?'
+```
+
+Explicit `ask --file` remains available. This mode does not give the model tool
+execution or modify EDIT/APPLY behavior. See `docs/context-engine.md`.

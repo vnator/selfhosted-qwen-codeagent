@@ -100,6 +100,25 @@ export function createQdrant({
         await call('/points?wait=true', 'PUT', { points: points.slice(i, i + 64) });
       }
     },
+    async queryPoints({ vector, repositoryId, embeddingModel, limit = 24 }) {
+      if (!Array.isArray(vector) || !vector.length || !vector.every(Number.isFinite)) throw new Error('Invalid query vector');
+      if (typeof repositoryId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{1,127}$/.test(repositoryId)) throw new Error('Invalid repository ID');
+      if (typeof embeddingModel !== 'string' || !embeddingModel) throw new Error('Embedding model is required');
+      if (!Number.isInteger(limit) || limit < 1 || limit > 48) throw new Error('Query limit must be 1–48');
+      if (!(await this.info())) throw new Error(`Qdrant collection ${collection} does not exist; run ingestion first`);
+      const { result } = await call('/points/query', 'POST', {
+        query: vector,
+        filter: { must: [
+          { key: 'repository_id', match: { value: repositoryId } },
+          { key: 'embedding_model', match: { value: embeddingModel } },
+        ] },
+        limit,
+        with_payload: ['repository_id', 'relative_path', 'start_line', 'end_line', 'source_hash', 'chunk_hash', 'embedding_model', 'content'],
+        with_vector: false,
+      });
+      if (!result || !Array.isArray(result.points)) throw new Error('Invalid Qdrant query response');
+      return result.points;
+    },
     async deleteIds(ids) {
       for (let i = 0; i < ids.length; i += 256) {
         await call('/points/delete?wait=true', 'POST', { points: ids.slice(i, i + 256) });

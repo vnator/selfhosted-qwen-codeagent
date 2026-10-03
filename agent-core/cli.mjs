@@ -3,23 +3,28 @@ import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { openWorkspace } from './src/workspace.mjs';
 import { createOllamaClient } from './src/ollama.mjs';
+import { createEmbedder, createQdrant } from './src/ingestion/clients.mjs';
+import { createContextProvider } from './src/context/retriever.mjs';
 import { ask, prepareEdit, review } from './src/runtime.mjs';
 import { applyProposal, previewProposal, stageProposal } from './src/proposals.mjs';
 
 const HELP = `Self-hosted Qwen Agent Core (experimental, local-only)
 
   node agent-core/cli.mjs ask --file README.md --question "Explain the architecture"
+  node --env-file=.env agent-core/cli.mjs ask --context auto --repository my-repo --question "Where is EDIT approval implemented?"
   node agent-core/cli.mjs review --diff changes.patch [--question "Check regressions"]
   node agent-core/cli.mjs edit --file docs/example.md --instruction "Improve this section"
   node agent-core/cli.mjs apply --proposal <id>
 
 Options: --workspace <root> (default: current directory); repeat --file up to 4 times.
+For ASK only: --context auto requires --repository <stable-id>, optional --limit 1..12.
+--context auto retrieves only current, authorized source chunks. It does not reindex.
 Agent Core has no autonomous shell tool execution and does not auto-parse tool JSON/XML.`;
 
 function parseArgs(argv) {
   const [command, ...args] = argv;
   const values = { file: [] };
-  const supported = new Set(['workspace', 'file', 'question', 'diff', 'instruction', 'proposal']);
+  const supported = new Set(['workspace', 'file', 'question', 'diff', 'instruction', 'proposal', 'context', 'repository', 'limit']);
   for (let i = 0; i < args.length; i += 2) {
     const key = args[i];
     if (!key?.startsWith('--') || !supported.has(key.slice(2)) || !args[i + 1]?.length) {
@@ -59,7 +64,26 @@ async function main() {
 
   const client = createOllamaClient();
   if (command === 'ask') {
-    console.log(await ask({ workspace, files: values.file, question: values.question, client }));
+    if (values.context && values.context !== 'auto') throw new Error('Only --context auto is supported');
+    if (values.repository && !values.context) throw new Error('--repository is supported with --context auto');
+    const limit = values.limit === undefined ? 6 : Number(values.limit);
+    if (values.limit !== undefined && !values.context) throw new Error('--limit requires --context auto');
+    let contextSources = [];
+    if (values.context === 'auto') {
+      if (!values.repository) throw new Error('--context auto requires --repository');
+      const provider = createContextProvider({
+        workspace, repositoryId: values.repository,
+        embedder: createEmbedder(), qdrant: createQdrant(), limit,
+      });
+      contextSources = await provider.retrieve(values.question);
+      if (!contextSources.length) {
+        throw new Error('No current, accessible matches. Check repository ID and collection; reingest the workspace if files changed.');
+      }
+      for (const source of contextSources) {
+        console.error(`[context] ${source.relativePath}:L${source.startLine}-L${source.endLine} score=${source.score.toFixed(4)}`);
+      }
+    }
+    console.log(await ask({ workspace, files: values.file, contextSources, question: values.question, client }));
   } else if (command === 'review') {
     console.log(await review({ workspace, diffPath: values.diff, question: values.question, client }));
   } else if (command === 'edit') {
