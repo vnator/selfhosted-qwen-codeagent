@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   # Servidor de Inferência LLM
@@ -8,6 +8,8 @@ services:
     restart: unless-stopped
     ports:
       - "11434:11434"
+    environment:
+      - OLLAMA_GO_TEMPLATE=0
     volumes:
       - ollama_data:/root/.ollama
     # Configuração para habilitar processamento na GPU via NVIDIA CUDA
@@ -27,7 +29,8 @@ services:
       - "6333:6333" # API REST
       - "6334:6334" # API gRPC
     volumes:
-      - qdrant_data:/qdrant/storage
+      - qdrant_data:/qdrant/storage:z
+
   # Orquestrador do Agente e Interface (com pipeline RAG embutido)
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
