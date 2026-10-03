@@ -1,0 +1,18 @@
+{
+  "name": "selfhosted-qwen-codeagent",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "infra:up": "docker compose up -d ollama qdrant",
+    "infra:status": "docker compose ps",
+    "infra:stop": "docker compose stop ollama qdrant",
+    "agent:up": "node scripts/agent.mjs up",
+    "agent:health": "node scripts/agent.mjs health",
+    "agent:ingest": "node scripts/agent.mjs ingest",
+    "agent:apply": "node scripts/agent.mjs apply",
+    "test": "npm --prefix agent-core test"
+  }
+}
