@@ -1,20 +1,21 @@
 # Agent Core — experimental MVP 0.2
 
-A standalone, local-first coding workflow. No dependency on Neovim, Open WebUI,
-Qdrant or the ingestion implementation. This version uses **Node.js 22+ and the
-standard library only**. It deliberately does **not** claim autonomous tool use.
+A standalone, local-first coding workflow independent of editors and Open WebUI.
+Explicit-file ASK requires only Ollama; opt-in `ASK --context auto` uses the Node
+ingestion index and Qdrant. Requires **Node.js 22+ and standard library only**.
+It deliberately does **not** claim autonomous tool use.
 
 ## What works in this slice
 
 | Mode | Operation | Side effects |
 | --- | --- | --- |
-| ASK | Answer using 1–4 explicitly selected source files and line numbers | None |
+| ASK | Answer from up to four selected files or opt-in read-only retrieved context | None |
 | REVIEW | Analyze a supplied `.diff` or `.patch` file | None |
 | EDIT | Ask Ollama for one complete-file replacement, validate markers and stage a unified diff | Creates an owner-only proposal in local state, not a repository edit |
 | APPLY | Preview the staged diff, compare source hash, ask for exact approval, atomically replace ONE existing text file | Only on explicit approval |
 
-No shell commands, automatic repo crawling, model-generated JSON tool dispatch,
-HTTP server or RAG connector are enabled yet. An editing proposal is **not** proof
+No autonomous shell commands, model-generated JSON tool dispatch or HTTP server
+are enabled. RAG retrieval is opt-in (`--context auto`) and does not run ingestion. An editing proposal is **not** proof
 of tool calling. The current known Qwen 7B/Ollama 0.33.3 limitation remains
 tracked separately in `tests/test-tool-calling.sh`.
 
@@ -100,9 +101,9 @@ inference compatibility issue is resolved.
   concurrent hostile OS processes or untrusted multi-user service access.
 - Reads only explicitly selected allowlisted UTF-8 text files within the
   workspace; secrets and symlinks are denied by conservative checks.
-- No automatic ingest/retrieval is wired here. Integrate a verified Context
-  Provider interface **after** reconciling the actual ingestion pipeline and
-  collection metadata. Keep retrieved content untrusted.
+- Automatic retrieval is **opt-in** via `ASK --context auto`. This never starts
+  ingestion and does not grant file access; retrieved content is untrusted and
+  checked against current, authorized workspace files before use.
 - The model can produce an inaccurate edit: inspect the diff and run relevant
   project tests manually after applying.
 
@@ -133,3 +134,12 @@ node --env-file=.env agent-core/cli.mjs ask --workspace . \
 
 Explicit `ask --file` remains available. This mode does not give the model tool
 execution or modify EDIT/APPLY behavior. See `docs/context-engine.md`.
+
+## File-layout integrity (Phase 05)
+
+EDIT normalizes the model's proposed replacement to the **existing file's** UTF-8 BOM,
+LF/CRLF convention, and final newline sequence before hashing or staging the diff.
+Mixed LF/CRLF and CR-only sources are rejected rather than silently reformatted.
+Applying an EDIT remains proposal-specific, interactive, and subject to the original
+file hash. Run `npm test` after upgrading. Deliberate line-ending changes should be
+made by an explicit formatting tool outside EDIT, not accidentally by the model.

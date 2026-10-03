@@ -6,6 +6,7 @@ import {
   chmod, lstat, mkdir, mkdtemp, readFile, realpath, rename, rm, stat, writeFile,
 } from 'node:fs/promises';
 import { readWorkspaceFile, sha256 } from './workspace.mjs';
+import { preserveFileLayout } from './text-layout.mjs';
 
 const UUID_RE = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 const SHA_RE = /^[0-9a-f]{64}$/i;
@@ -47,6 +48,9 @@ export async function renderPreview(workspace, original, replacement, relativePa
 }
 
 export async function stageProposal({ workspace, source, replacement }) {
+  // Enforce the source layout even for callers bypassing prepareEdit().
+  replacement = preserveFileLayout(source.content, replacement);
+  if (replacement === source.content) throw new Error('No changes were proposed');
   const id = randomUUID();
   const proposal = {
     schemaVersion: 1,

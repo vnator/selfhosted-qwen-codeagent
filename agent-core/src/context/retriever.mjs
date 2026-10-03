@@ -1,5 +1,6 @@
 import { readWorkspaceFile, MAX_READ_BYTES } from '../workspace.mjs';
 import { sha256 } from '../ingestion/files.mjs';
+import { selectContextSources } from './ranker.mjs';
 
 const REPOSITORY_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{1,127}$/;
 const MAX_QUERY_BYTES = 4096;
@@ -44,15 +45,13 @@ export function createContextProvider({
         vector,
         repositoryId,
         embeddingModel: embedder.model,
-        limit: Math.min(48, limit * 4),
+        limit: 48,
       });
       if (!Array.isArray(points)) throw new Error('Qdrant returned an invalid list of points');
-      const sources = [];
+      const verified = [];
       const checked = new Map();
       const seen = new Set();
-      let usedBytes = 0;
       for (const point of points) {
-        if (sources.length >= limit) break;
         const p = point?.payload;
         // Double-check server-side filters; never trust Qdrant content as workspace authority.
         if (!p || p.repository_id !== repositoryId || p.embedding_model !== embedder.model) continue;
@@ -81,13 +80,10 @@ export function createContextProvider({
           content: p.content,
           score: point.score,
         };
-        const bytes = Buffer.byteLength(`SOURCE: ${entry.relativePath}:${entry.startLine}-${entry.endLine}\n${entry.content}\n`, 'utf8');
-        if (usedBytes + bytes > maxContextBytes) continue;
-        sources.push(entry);
+        verified.push(entry);
         seen.add(key);
-        usedBytes += bytes;
       }
-      return sources;
+      return selectContextSources(verified, question, { limit, maxContextBytes });
     },
   };
 }

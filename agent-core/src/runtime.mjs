@@ -1,4 +1,5 @@
 import { MAX_EDIT_BYTES, MAX_READ_BYTES, numberedText, readWorkspaceFile } from './workspace.mjs';
+import { preserveFileLayout } from './text-layout.mjs';
 
 const BASE_RULES = [
   'You are a local coding assistant. Only claim to know the explicit sources provided.',
@@ -68,7 +69,7 @@ export async function prepareEdit({ workspace, file, instruction, client, stage 
     ].join('\n'),
     user: `FILE: ${source.relativePath}\nCURRENT CONTENT:\n${source.content}\n\nEDIT INSTRUCTION:\n${instruction}`,
   });
-  const replacement = extractReplacement(response);
+  const replacement = preserveFileLayout(source.content, extractReplacement(response));
   if (replacement === source.content) throw new Error('No changes were proposed');
   return stage({ workspace, source, replacement });
 }

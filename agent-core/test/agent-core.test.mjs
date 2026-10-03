@@ -118,3 +118,73 @@ test('Ollama client does not declare tools or execute textual JSON/XML', async (
   assert.equal(request.options.num_ctx, 16384);
   assert.throws(() => createOllamaClient({ url: 'http://example.com:11434' }), /loopback/);
 });
+
+test('EDIT preserves original LF terminator when the model omits it', async (t) => {
+  const { root, workspace } = await fixture(t);
+  const result = await prepareEdit({
+    workspace, file: 'src/sum.ts', instruction: 'Add explicit return type',
+    client: { complete: async () => '<<<BEGIN_REPLACEMENT>>>\nexport function sum(a: number, b: number): number { return a + b; }\n<<<END_REPLACEMENT>>>' },
+    stage: stageProposal,
+  });
+  assert.doesNotMatch(result.diff, /No newline at end of file/);
+  await applyProposal(workspace, result.id, `APPLY ${result.id}`);
+  assert.equal(await readFile(join(root, 'src', 'sum.ts'), 'utf8'), 'export function sum(a: number, b: number): number { return a + b; }\n');
+});
+
+test('EDIT preserves CRLF and trailing blank lines across stage/apply', async (t) => {
+  const { root, workspace } = await fixture(t);
+  const file = join(root, 'src', 'sum.ts');
+  await writeFile(file, 'export const x = 1;\r\nexport const y = 2;\r\n\r\n');
+  const result = await prepareEdit({
+    workspace, file: 'src/sum.ts', instruction: 'Change x',
+    client: { complete: async () => '<<<BEGIN_REPLACEMENT>>>\nexport const x = 3;\nexport const y = 2;\n<<<END_REPLACEMENT>>>' },
+    stage: stageProposal,
+  });
+  await applyProposal(workspace, result.id, `APPLY ${result.id}`);
+  assert.equal(await readFile(file, 'utf8'), 'export const x = 3;\r\nexport const y = 2;\r\n\r\n');
+});
+
+test('EDIT preserves missing newline in original even if model adds one', async (t) => {
+  const { root, workspace } = await fixture(t);
+  const file = join(root, 'src', 'sum.ts');
+  await writeFile(file, 'export const x = 1;');
+  const result = await prepareEdit({
+    workspace, file: 'src/sum.ts', instruction: 'Change x',
+    client: { complete: async () => '<<<BEGIN_REPLACEMENT>>>\nexport const x = 3;\n\n<<<END_REPLACEMENT>>>' },
+    stage: stageProposal,
+  });
+  await applyProposal(workspace, result.id, `APPLY ${result.id}`);
+  assert.equal(await readFile(file, 'utf8'), 'export const x = 3;');
+});
+
+test('EDIT preserves UTF-8 BOM; readWorkspaceFile hashes full byte representation', async (t) => {
+  const { root, workspace } = await fixture(t);
+  const file = join(root, 'src', 'sum.ts');
+  await writeFile(file, '\uFEFFexport const x = 1;\n', 'utf8');
+  const source = await readWorkspaceFile(workspace, 'src/sum.ts');
+  assert.ok(source.content.startsWith('\uFEFF'));
+  const result = await prepareEdit({
+    workspace, file: 'src/sum.ts', instruction: 'Change x',
+    client: { complete: async () => '<<<BEGIN_REPLACEMENT>>>\nexport const x = 3;\n<<<END_REPLACEMENT>>>' },
+    stage: stageProposal,
+  });
+  await applyProposal(workspace, result.id, `APPLY ${result.id}`);
+  assert.deepEqual(await readFile(file), Buffer.from('\uFEFFexport const x = 3;\n', 'utf8'));
+});
+
+test('EDIT rejects mixed source line endings and binary model replacements', async (t) => {
+  const { root, workspace } = await fixture(t);
+  const file = join(root, 'src', 'sum.ts');
+  await writeFile(file, 'export const x = 1;\r\nexport const y = 2;\n');
+  await assert.rejects(prepareEdit({
+    workspace, file: 'src/sum.ts', instruction: 'Change x',
+    client: { complete: async () => '<<<BEGIN_REPLACEMENT>>>\nexport const x = 3;\n<<<END_REPLACEMENT>>>' },
+    stage: stageProposal,
+  }), /Mixed LF\/CRLF/);
+  await writeFile(file, 'export const x = 1;\n');
+  await assert.rejects(prepareEdit({
+    workspace, file: 'src/sum.ts', instruction: 'Change x',
+    client: { complete: async () => '<<<BEGIN_REPLACEMENT>>>\nexport const x = 3;\0\n<<<END_REPLACEMENT>>>' },
+    stage: stageProposal,
+  }), /Binary replacement/);
+});

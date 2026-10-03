@@ -18,6 +18,12 @@ node --env-file=.env agent-core/context.mjs \
 
 The retrieval client checks that each Qdrant point has the correct repository ID and embedding model, then re-reads the local file using the existing workspace guard. It excludes missing, inaccessible, stale or tampered content instead of trusting the vector store as an authority.
 
+### Source-aware selection (Phase 06)
+
+A vector-only top-6 produced six documentation excerpts for an implementation question and did not include the implementation. The retriever now fetches up to 48 *candidate* points from Qdrant, validates every candidate against the current workspace, and re-ranks the eligible entries using lexical matches plus vector similarity. For questions explicitly about implementation, it reserves up to half the final context for matching source-code excerpts. Selection also prefers distinct files and suppresses largely overlapping ranges. The same byte budget and workspace/embedding-model isolation still apply.
+
+This is **re-ranking within the Qdrant candidate pool**, not yet a standalone lexical index: code omitted entirely from the first 48 vector candidates cannot be recovered. For an exact implementation question, `ask --context auto --file agent-core/src/proposals.mjs ...` remains a deterministic fallback until independent lexical/symbol discovery is added. Never bypass workspace checks to improve recall.
+
 ## Second run — ASK with automatically retrieved context
 
 ```sh
@@ -41,4 +47,4 @@ The `--context auto` path is **read-only ASK**. EDIT is still explicitly scoped 
 
 ## Important
 
-Do not delete `ingestion/ingest.py` blindly if something still runs it. Once the Node ingestion and retrieval are verified and all jobs/documentation refer exclusively to Node, remove that legacy file and its Python-specific dependencies in a separate cleanup commit. Keep existing Qdrant volumes and the legacy collection until a deliberate cleanup decision.
+The application runtime and ingestion are Node.js only. Check `node scripts/check-no-python.mjs` for legacy implementation artifacts. Keep existing Qdrant volumes and the legacy collection until a separate, deliberate cleanup decision.

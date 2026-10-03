@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { mkdtemp, rm, writeFile, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, symlink } from 'node:fs/promises';
 import { openWorkspace } from '../src/workspace.mjs';
 import { sha256 } from '../src/ingestion/files.mjs';
 import { createContextProvider } from '../src/context/retriever.mjs';
@@ -122,4 +122,103 @@ test('ASK retains the explicit-file mode and rejects missing context', async (t)
     client: { async complete(value) { prompt = value.user; return 'ok'; } } });
   assert.match(prompt, /SOURCE: example.js/);
   await assert.rejects(ask({ workspace, files: [], contextSources: [], question: 'Nothing', client: {} }), /requires/i);
+});
+
+function fullFileHit(relativePath, content, score) {
+  return {
+    score,
+    payload: {
+      repository_id: repositoryId,
+      embedding_model: model,
+      relative_path: relativePath,
+      start_line: 1,
+      end_line: content.split('\n').length,
+      source_hash: sha256(content),
+      chunk_hash: sha256(content),
+      content,
+    },
+  };
+}
+
+test('implementation questions include relevant code even if documentation has higher vector similarity', async (t) => {
+  const { workspace, dir } = await fixture(t);
+  await mkdir(join(dir, 'docs'), { recursive: true });
+  await mkdir(join(dir, 'agent-core', 'src'), { recursive: true });
+  const docs = [];
+  for (let i = 0; i < 5; i++) {
+    const path = `docs/edit-guide-${i}.md`;
+    const content = `# EDIT approval mechanism ${i}\nThis document describes approval, implementation and editing.\n`;
+    await writeFile(join(dir, path), content);
+    docs.push(fullFileHit(path, content, 0.99 - (i * 0.01)));
+  }
+  const cliCode = 'const approval = await rl.question(`Type APPLY ${id} to confirm: `);\n';
+  const proposalCode = 'export function applyProposal(workspace, id, approval) {\n  if (approval !== `APPLY ${id}`) throw new Error("approval required");\n}\n';
+  await writeFile(join(dir, 'agent-core', 'cli.mjs'), cliCode);
+  await writeFile(join(dir, 'agent-core', 'src', 'proposals.mjs'), proposalCode);
+  const candidates = [
+    ...docs,
+    fullFileHit('agent-core/cli.mjs', cliCode, 0.51),
+    fullFileHit('agent-core/src/proposals.mjs', proposalCode, 0.50),
+  ];
+  const question = 'Where is the EDIT approval mechanism implemented? Cite relevant files and line ranges.';
+  const sources = await createContextProvider({
+    workspace,
+    repositoryId,
+    embedder: { model, async embed(values) { assert.deepEqual(values, [question]); return [[1, 2, 3]]; } },
+    qdrant: { async queryPoints(opts) {
+      assert.equal(opts.limit, 48);
+      assert.equal(opts.repositoryId, repositoryId);
+      assert.equal(opts.embeddingModel, model);
+      return candidates;
+    } },
+    limit: 6,
+  }).retrieve(question);
+  assert.equal(sources.length, 6);
+  assert.ok(sources.some((s) => s.relativePath === 'agent-core/cli.mjs'));
+  assert.ok(sources.some((s) => s.relativePath === 'agent-core/src/proposals.mjs'));
+  assert.equal(sources[0].relativePath.endsWith('.md'), false, 'implementation code should be represented early');
+  assert.ok(sources.every((s) => Number.isSafeInteger(s.startLine) && Number.isSafeInteger(s.endLine)));
+});
+
+test('conceptual questions retain semantic ordering instead of forcing code into context', async (t) => {
+  const { workspace, dir } = await fixture(t);
+  await mkdir(join(dir, 'docs'), { recursive: true });
+  const md = '# READ ME\nThe conceptual overview of ingestion and retrieval.\n';
+  const code = 'export function unrelatedFunction() { return 1; }\n';
+  await writeFile(join(dir, 'docs', 'overview.md'), md);
+  await writeFile(join(dir, 'example.js'), code);
+  const question = 'Summarize the conceptual overview of ingestion and retrieval';
+  const sources = await createContextProvider({
+    workspace, repositoryId,
+    embedder: { model, async embed() { return [[1, 2, 3]]; } },
+    qdrant: { async queryPoints() {
+      return [fullFileHit('docs/overview.md', md, 0.95), fullFileHit('example.js', code, 0.35)];
+    } },
+    limit: 1,
+  }).retrieve(question);
+  assert.equal(sources[0].relativePath, 'docs/overview.md');
+});
+
+test('context budget is enforced after re-ranking and duplicate source ranges are excluded', async (t) => {
+  const { workspace, dir } = await fixture(t);
+  await mkdir(join(dir, 'docs'), { recursive: true });
+  const doc = `# Approval\n${'approval '.repeat(80)}\n`;
+  const src = 'const approval = `APPLY ${id}`;\n';
+  await writeFile(join(dir, 'docs', 'approval.md'), doc);
+  await writeFile(join(dir, 'example.js'), src);
+  const question = 'Where is the approval mechanism implemented?';
+  const sources = await createContextProvider({
+    workspace, repositoryId,
+    embedder: { model, async embed() { return [[1, 2, 3]]; } },
+    qdrant: { async queryPoints() {
+      return [
+        fullFileHit('docs/approval.md', doc, 0.98),
+        fullFileHit('docs/approval.md', doc, 0.98),
+        fullFileHit('example.js', src, 0.5),
+      ];
+    } },
+    limit: 3, maxContextBytes: 512,
+  }).retrieve(question);
+  assert.equal(sources.length, 1);
+  assert.equal(sources[0].relativePath, 'example.js');
 });

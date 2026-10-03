@@ -67,7 +67,7 @@ export async function readWorkspaceFile(workspace, requestedPath, limit = MAX_RE
   const ref = await resolveWorkspaceFile(workspace, requestedPath, limit);
   const raw = await readFile(ref.path);
   if (raw.length > limit || raw.includes(0)) throw new Error('Binary or oversized file rejected');
-  const content = new TextDecoder('utf-8', { fatal: true }).decode(raw);
+  const content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(raw);
   return { ...ref, content, hash: sha256(content), bytes: raw.length };
 }
 
